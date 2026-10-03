@@ -20,8 +20,16 @@ db.serialize(() => {
       instructions TEXT,
       supplies TEXT,
       supply_location TEXT
-    )
+      
+    )     
   `)
+
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL
+)`)
+
 
   db.get('SELECT COUNT(*) AS count FROM tasks', (error, row) => {
     if (error) {
