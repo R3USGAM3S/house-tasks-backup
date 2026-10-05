@@ -186,6 +186,12 @@ function App() {
                   <p>Not completed</p>
                 )}
 
+                <div className="complete-row">
+                  <button className="complete-button" onClick={() => toggleTask(task.id)}>
+                    {task.completed ? 'Undo' : 'Complete'}
+                  </button>
+                </div>
+
                 <div className="task-actions">
                   {hasDetails(task) && (
                     <button
@@ -196,10 +202,6 @@ function App() {
                       {openTaskId === task.id ? 'Hide details' : 'Show details'}
                     </button>
                   )}
-
-                  <button onClick={() => toggleTask(task.id)}>
-                    {task.completed ? 'Undo' : 'Complete'}
-                  </button>
                 </div>
 
                 {openTaskId === task.id && (
