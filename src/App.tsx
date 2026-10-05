@@ -1,20 +1,42 @@
 import { useEffect, useState } from 'react'
 import type { Task } from './types/Task'
 import './App.css'
+import Login from './Login'
 const API_URL = 'http://localhost:3001/api'
 
 function App() {
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
   const [tasks, setTasks] = useState<Task[]>([])
 
 
 
   const [openTaskId, setOpenTaskId] = useState<number | null>(null)
+  const handleLogin = (newToken: string) => {
+    localStorage.setItem('token', newToken)
+    setToken(newToken)
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    setToken(null)
+  }
+
   useEffect(() => {
-   fetch(`${API_URL}/tasks`)
-      .then((response) => response.json())
+    if (!token) return
+    fetch(`${API_URL}/tasks`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((response) => {
+        if (response.status === 401) {
+          handleLogout()
+          return []
+        }
+        return response.json()
+      })
       .then((data) => setTasks(data))
       .catch((error) => console.error('Failed to fetch tasks:', error))
-  }, [])
+  }, [token])
+
   const toggleTask = async (id: number) => {
     const task = tasks.find((t) => t.id === id)
     if (!task) return
@@ -24,10 +46,17 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/tasks/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ completed: newCompleted }),
       })
 
+      if (response.status === 401) {
+        handleLogout()
+        return
+      }
       if (!response.ok) {
         throw new Error(`Server responded with ${response.status}`)
       }
@@ -40,9 +69,14 @@ function App() {
     }
   }
 
+  if (!token) {
+    return <Login onLogin={handleLogin} />
+  }
+
   return (
     <>
       <h1>House Tasks</h1>
+      <button onClick={handleLogout}>Log out</button>
       <h2>Today's Tasks</h2>
 
       {tasks.map((task) => (
