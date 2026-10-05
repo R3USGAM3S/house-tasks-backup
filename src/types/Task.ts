@@ -8,5 +8,5 @@ export interface Task {
   instructions: string[]
   supplies: string[]
   supplyLocation: string
-  estimatedTime: number
+  estimatedTime: number | null
 }

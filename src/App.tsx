@@ -4,6 +4,10 @@ import './App.css'
 import Login from './Login'
 const API_URL = '/api'
 
+// Only show the details button when the task has something to show
+const hasDetails = (task: Task) =>
+  task.instructions.length > 0 || task.supplies.length > 0 || Boolean(task.supplyLocation)
+
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
   const [tasks, setTasks] = useState<Task[]>([])
@@ -96,7 +100,7 @@ function App() {
         >
           <h3>{task.name}</h3>
           <p>{task.frequency}</p>
-          <p>Estimated time: {task.estimatedTime} min</p>
+          {task.estimatedTime && <p>Estimated time: {task.estimatedTime} min</p>}
           <p>
             {task.completed
               ? `Completed by ${task.completedBy}, ${new Date(task.completedAt ?? '').toLocaleString()}`
@@ -104,13 +108,15 @@ function App() {
           </p>
 
           <div className="task-actions">
-            <button
-              onClick={() =>
-                setOpenTaskId(openTaskId === task.id ? null : task.id)
-              }
-            >
-              {openTaskId === task.id ? 'Hide details' : 'Show details'}
-            </button>
+            {hasDetails(task) && (
+              <button
+                onClick={() =>
+                  setOpenTaskId(openTaskId === task.id ? null : task.id)
+                }
+              >
+                {openTaskId === task.id ? 'Hide details' : 'Show details'}
+              </button>
+            )}
 
             <button onClick={() => toggleTask(task.id)}>
               {task.completed ? 'Undo' : 'Complete'}

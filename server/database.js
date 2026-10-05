@@ -1,5 +1,6 @@
 const path = require('path')
 const sqlite3 = require('sqlite3').verbose()
+const taskList = require('./taskList')
 
 const db = new sqlite3.Database(path.join(__dirname, 'house-tasks.db'), (error) => {
   if (error) {
@@ -45,54 +46,10 @@ db.serialize(() => {
     }
 
     if (row.count === 0) {
-      const insertTask = db.prepare(`
-        INSERT INTO tasks (
-          name,
-          frequency,
-          completed,
-          estimated_time,
-          instructions,
-          supplies,
-          supply_location
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `)
-
-      insertTask.run(
-        'Clean bathroom',
-        'Weekly',
-        0,
-        20,
-        JSON.stringify([
-          'Clean sink',
-          'Clean toilet',
-          'Wipe mirror',
-          'Mop floor',
-        ]),
-        JSON.stringify([
-          'Bathroom cleaner',
-          'Cloth',
-          'Mop',
-        ]),
-        'Utility room'
-      )
-
-      insertTask.run(
-        'Empty kitchen bins',
-        'Daily',
-        0,
-        10,
-        JSON.stringify([
-          'Remove full bin bag',
-          'Replace with a new bag',
-          'Take rubbish to the correct container',
-        ]),
-        JSON.stringify([
-          'Bin bags',
-        ]),
-        'Kitchen cupboard'
-      )
-
+      const insertTask = db.prepare('INSERT INTO tasks (name, frequency) VALUES (?, ?)')
+      for (const task of taskList) {
+        insertTask.run(task.name, task.frequency)
+      }
       insertTask.finalize()
 
       console.log('Inserted initial tasks into database')
