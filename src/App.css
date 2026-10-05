@@ -1,13 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
- 
+
 #root {
+  width: 100%;
   max-width: 700px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 1rem;
   font-family: 'VT323', monospace;
   font-size: 1.3rem;
 }
- 
+
 /* Game fonts for the whole app */
 #root h1,
 #root h2 {
@@ -15,16 +16,16 @@
   letter-spacing: 0;
   line-height: 1.4;
 }
- 
+
 #root h1 {
   font-size: 1.8rem;
 }
- 
+
 #root h2 {
   font-size: 1rem;
   margin-bottom: 1rem;
 }
- 
+
 :where(#root) button {
   font-family: 'VT323', monospace;
   font-size: 1.2rem;
@@ -35,12 +36,12 @@
   padding: 0.2rem 0.8rem;
   cursor: pointer;
 }
- 
+
 :where(#root) button:hover {
   background: var(--text-h);
   color: var(--bg);
 }
- 
+
 :where(#root) input {
   font-family: 'VT323', monospace;
   font-size: 1.2rem;
@@ -50,13 +51,13 @@
   border-radius: 0;
   padding: 0.3rem 0.6rem;
 }
- 
+
 /* Log out button: don't stretch to full width */
 #root > button {
   align-self: center;
   margin-bottom: 1rem;
 }
- 
+
 /* Login form: fields stacked */
 #root form {
   display: flex;
@@ -65,7 +66,7 @@
   max-width: 300px;
   margin: 0 auto;
 }
- 
+
 /* Game-style task card. Not completed = grey, completed = green */
 .task-card {
   --card-color: #6b7280;
@@ -80,38 +81,38 @@
   box-shadow: 0 0 8px var(--card-glow);
   transition: border-color 0.3s, color 0.3s, box-shadow 0.3s;
 }
- 
+
 .task-card.completed {
   --card-color: #16a34a;
   --card-glow: rgba(22, 163, 74, 0.35);
 }
- 
+
 @media (prefers-color-scheme: dark) {
   .task-card {
     --card-color: #9ca3af;
   }
- 
+
   .task-card.completed {
     --card-color: #4ade80;
     --card-glow: rgba(74, 222, 128, 0.35);
   }
 }
- 
+
 .task-card h3,
 .task-card h4 {
   font-family: 'Press Start 2P', monospace;
   color: var(--card-color);
   line-height: 1.5;
 }
- 
+
 .task-card h3 {
   font-size: 1rem;
 }
- 
+
 .task-card h4 {
   font-size: 0.75rem;
 }
- 
+
 .task-card button {
   font-family: 'VT323', monospace;
   font-size: 1.2rem;
@@ -122,25 +123,25 @@
   padding: 0.2rem 0.8rem;
   cursor: pointer;
 }
- 
+
 .task-card button:hover {
   background: var(--card-color);
   color: var(--bg);
 }
- 
+
 .task-actions {
   display: flex;
   gap: 0.5rem;
   margin-top: 1rem;
   flex-wrap: wrap;
 }
- 
+
 .task-details {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 2px dashed var(--card-color);
 }
- 
+
 .task-details ul {
   padding-left: 1.2rem;
 }
