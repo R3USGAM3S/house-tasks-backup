@@ -129,6 +129,18 @@
   color: var(--bg);
 }
 
+/* Complete / Undo button: centered right under the status line */
+.complete-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.task-card .complete-button {
+  font-size: 1.5rem;
+  padding: 0.4rem 2rem;
+}
+
 .task-actions {
   display: flex;
   gap: 0.5rem;
