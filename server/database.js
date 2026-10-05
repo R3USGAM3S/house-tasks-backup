@@ -30,6 +30,13 @@ db.serialize(() => {
   password_hash TEXT NOT NULL
 )`)
 
+  db.run(`CREATE TABLE IF NOT EXISTS completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  completed_at TEXT NOT NULL
+)`)
+
 
   db.get('SELECT COUNT(*) AS count FROM tasks', (error, row) => {
     if (error) {

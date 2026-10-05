@@ -61,8 +61,18 @@ function App() {
         throw new Error(`Server responded with ${response.status}`)
       }
 
+      const data = await response.json()
       setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t))
+        prev.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                completed: data.completed,
+                completedBy: data.completedBy,
+                completedAt: data.completed ? new Date().toISOString() : null,
+              }
+            : t
+        )
       )
     } catch (error) {
       console.error('Failed to update task:', error)
@@ -80,11 +90,18 @@ function App() {
       <h2>Today's Tasks</h2>
 
       {tasks.map((task) => (
-        <div key={task.id} className="task-card">
+        <div
+          key={task.id}
+          className={task.completed ? 'task-card completed' : 'task-card'}
+        >
           <h3>{task.name}</h3>
           <p>{task.frequency}</p>
           <p>Estimated time: {task.estimatedTime} min</p>
-          <p>{task.completed ? 'Completed' : 'Not completed'}</p>
+          <p>
+            {task.completed
+              ? `Completed by ${task.completedBy}, ${new Date(task.completedAt ?? '').toLocaleString()}`
+              : 'Not completed'}
+          </p>
 
           <div className="task-actions">
             <button

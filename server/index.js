@@ -29,6 +29,21 @@ function requireAuth(req, res, next) {
 
 const allowedFrequencies = ['Daily', 'Weekly', 'Biweekly', 'Monthly']
 
+// Start of the current period for a task: a completion after this counts as done.
+function periodStart(frequency) {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  if (frequency === 'Weekly') {
+    const daysSinceMonday = (start.getDay() + 6) % 7
+    start.setDate(start.getDate() - daysSinceMonday)
+  } else if (frequency === 'Biweekly') {
+    start.setDate(start.getDate() - 13)
+  } else if (frequency === 'Monthly') {
+    start.setDate(1)
+  }
+  return start.toISOString()
+}
+
 function validateTask(task) {
   const errors = []
 
@@ -53,23 +68,42 @@ function validateTask(task) {
 }
 
 app.get('/api/tasks', requireAuth, (req, res) => {
-  db.all('SELECT * FROM tasks', (error, rows) => {
+  const sql = `
+    SELECT tasks.*, completions.completed_at, users.username AS completed_by
+    FROM tasks
+    LEFT JOIN completions ON completions.id = (
+      SELECT id FROM completions
+      WHERE task_id = tasks.id
+      ORDER BY completed_at DESC
+      LIMIT 1
+    )
+    LEFT JOIN users ON users.id = completions.user_id
+  `
+
+  db.all(sql, (error, rows) => {
     if (error) {
       console.error('Failed to fetch tasks:', error.message)
       res.status(500).json({ error: 'Failed to fetch tasks' })
       return
     }
 
-    const tasks = rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      frequency: row.frequency,
-      completed: Boolean(row.completed),
-      estimatedTime: row.estimated_time,
-      instructions: JSON.parse(row.instructions) ?? [],   
-      supplies: JSON.parse(row.supplies) ?? [], 
-      supplyLocation: row.supply_location,
-    }))
+    const tasks = rows.map((row) => {
+      const completed =
+        row.completed_at !== null && row.completed_at >= periodStart(row.frequency)
+
+      return {
+        id: row.id,
+        name: row.name,
+        frequency: row.frequency,
+        completed,
+        completedBy: completed ? row.completed_by : null,
+        completedAt: completed ? row.completed_at : null,
+        estimatedTime: row.estimated_time,
+        instructions: JSON.parse(row.instructions) ?? [],
+        supplies: JSON.parse(row.supplies) ?? [],
+        supplyLocation: row.supply_location,
+      }
+    })
 
     res.json(tasks)
   })
@@ -162,22 +196,38 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
     return
   }
 
-  db.run(
-    'UPDATE tasks SET completed = ? WHERE id = ?',
-    [body.completed ? 1 : 0, id],
-    function (error) {
+  db.get('SELECT frequency FROM tasks WHERE id = ?', [id], (error, task) => {
+    if (error) {
+      console.error('Failed to update task:', error.message)
+      res.status(500).json({ error: 'Failed to update task' })
+      return
+    }
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' })
+      return
+    }
+
+    // Complete adds a new completion; Undo removes the ones from the current period.
+    const sql = body.completed
+      ? 'INSERT INTO completions (task_id, user_id, completed_at) VALUES (?, ?, ?)'
+      : 'DELETE FROM completions WHERE task_id = ? AND completed_at >= ?'
+    const params = body.completed
+      ? [id, req.user.userId, new Date().toISOString()]
+      : [id, periodStart(task.frequency)]
+
+    db.run(sql, params, (error) => {
       if (error) {
         console.error('Failed to update task:', error.message)
         res.status(500).json({ error: 'Failed to update task' })
         return
       }
-      if (this.changes === 0) {
-        res.status(404).json({ error: 'Task not found' })
-        return
-      }
-      res.json({ id, completed: body.completed })
-    }
-  )
+      res.json({
+        id,
+        completed: body.completed,
+        completedBy: body.completed ? req.user.username : null,
+      })
+    })
+  })
 })
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`)
