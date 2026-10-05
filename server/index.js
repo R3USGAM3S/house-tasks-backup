@@ -11,7 +11,7 @@ if (!JWT_SECRET) {
   console.error('JWT_SECRET puuttuu')
   process.exit(1)
 }
-
+ 
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
 function requireAuth(req, res, next) {
@@ -27,9 +27,22 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 }
-
+ 
 const allowedFrequencies = ['Daily', 'Weekly', 'Biweekly', 'Monthly']
-
+ 
+// Keep these in sync with src/avatarOptions.ts
+const allowedShapes = ['circle', 'square', 'triangle', 'diamond', 'star', 'heart']
+const allowedColors = [
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#16a34a',
+  '#06b6d4',
+  '#3b82f6',
+  '#a855f7',
+  '#ec4899',
+]
+ 
 // Start of the current period for a task: a completion after this counts as done.
 function periodStart(frequency) {
   const start = new Date()
@@ -44,10 +57,10 @@ function periodStart(frequency) {
   }
   return start.toISOString()
 }
-
+ 
 function validateTask(task) {
   const errors = []
-
+ 
   if (typeof task.name !== 'string' || task.name.trim() === '') {
     errors.push('name is required')
   }
@@ -64,13 +77,14 @@ function validateTask(task) {
   if (task.supplies !== undefined && !Array.isArray(task.supplies)) {
     errors.push('supplies must be a list')
   }
-
+ 
   return errors
 }
-
+ 
 app.get('/api/tasks', requireAuth, (req, res) => {
   const sql = `
-    SELECT tasks.*, completions.completed_at, users.username AS completed_by
+    SELECT tasks.*, completions.completed_at, users.username AS completed_by,
+      users.shape AS completed_by_shape, users.color AS completed_by_color
     FROM tasks
     LEFT JOIN completions ON completions.id = (
       SELECT id FROM completions
@@ -80,24 +94,26 @@ app.get('/api/tasks', requireAuth, (req, res) => {
     )
     LEFT JOIN users ON users.id = completions.user_id
   `
-
+ 
   db.all(sql, (error, rows) => {
     if (error) {
       console.error('Failed to fetch tasks:', error.message)
       res.status(500).json({ error: 'Failed to fetch tasks' })
       return
     }
-
+ 
     const tasks = rows.map((row) => {
       const completed =
         row.completed_at !== null && row.completed_at >= periodStart(row.frequency)
-
+ 
       return {
         id: row.id,
         name: row.name,
         frequency: row.frequency,
         completed,
         completedBy: completed ? row.completed_by : null,
+        completedByShape: completed ? row.completed_by_shape : null,
+        completedByColor: completed ? row.completed_by_color : null,
         completedAt: completed ? row.completed_at : null,
         estimatedTime: row.estimated_time,
         instructions: JSON.parse(row.instructions) ?? [],
@@ -105,19 +121,19 @@ app.get('/api/tasks', requireAuth, (req, res) => {
         supplyLocation: row.supply_location,
       }
     })
-
+ 
     res.json(tasks)
   })
 })
 app.post('/api/tasks', requireAuth, (req, res) => {
   const body = req.body ?? {}
   const errors = validateTask(body)
-
+ 
   if (errors.length > 0) {
     res.status(400).json({ errors })
     return
   }
-
+ 
   const {
     name,
     frequency,
@@ -126,7 +142,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
     supplies = [],
     supplyLocation = '',
   } = body
-
+ 
   const sql = `
     INSERT INTO tasks (
       name,
@@ -139,7 +155,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `
-
+ 
   db.run(
     sql,
     [
@@ -157,7 +173,7 @@ app.post('/api/tasks', requireAuth, (req, res) => {
         res.status(500).json({ error: 'Failed to create task' })
         return
       }
-
+ 
       res.status(201).json({
         id: this.lastID,
         name,
@@ -174,11 +190,11 @@ app.post('/api/tasks', requireAuth, (req, res) => {
 function createToken(user) {
   return jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' })
 }
-
+ 
 // New residents create their own account with the shared house code (HOUSE_CODE in .env)
 app.post('/api/register', async (req, res) => {
-  const { username, password, houseCode } = req.body ?? {}
-
+  const { username, password, houseCode, shape = 'circle', color = '#16a34a' } = req.body ?? {}
+ 
   if (!process.env.HOUSE_CODE) {
     return res.status(403).json({ error: 'Registration is not enabled' })
   }
@@ -191,11 +207,15 @@ app.post('/api/register', async (req, res) => {
   if (typeof password !== 'string' || password.length < 1) {
     return res.status(400).json({ error: 'Password is required' })
   }
-
+ 
+  if (!allowedShapes.includes(shape) || !allowedColors.includes(color)) {
+    return res.status(400).json({ error: 'Invalid shape or color' })
+  }
+ 
   const hash = await bcrypt.hash(password, 10)
   db.run(
-    'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-    [username, hash],
+    'INSERT INTO users (username, password_hash, shape, color) VALUES (?, ?, ?, ?)',
+    [username, hash, shape, color],
     function (error) {
       if (error) {
         if (error.message.includes('UNIQUE')) {
@@ -208,7 +228,36 @@ app.post('/api/register', async (req, res) => {
     }
   )
 })
-
+ 
+// The logged-in user's own profile
+app.get('/api/me', requireAuth, (req, res) => {
+  db.get(
+    'SELECT username, shape, color FROM users WHERE id = ?',
+    [req.user.userId],
+    (error, user) => {
+      if (error) return res.status(500).json({ error: 'Database error' })
+      if (!user) return res.status(401).json({ error: 'User not found' })
+      res.json(user)
+    }
+  )
+})
+ 
+app.patch('/api/me', requireAuth, (req, res) => {
+  const { shape, color } = req.body ?? {}
+  if (!allowedShapes.includes(shape) || !allowedColors.includes(color)) {
+    return res.status(400).json({ error: 'Invalid shape or color' })
+  }
+ 
+  db.run(
+    'UPDATE users SET shape = ?, color = ? WHERE id = ?',
+    [shape, color, req.user.userId],
+    (error) => {
+      if (error) return res.status(500).json({ error: 'Database error' })
+      res.json({ shape, color })
+    }
+  )
+})
+ 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body ?? {}
   if (typeof username !== 'string' || typeof password !== 'string') {
@@ -224,7 +273,7 @@ app.post('/api/login', (req, res) => {
 app.patch('/api/tasks/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id)
   const body = req.body ?? {}
-
+ 
   if (!Number.isInteger(id)) {
     res.status(400).json({ errors: ['id must be a number'] })
     return
@@ -233,7 +282,7 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
     res.status(400).json({ errors: ['completed must be true or false'] })
     return
   }
-
+ 
   db.get('SELECT frequency FROM tasks WHERE id = ?', [id], (error, task) => {
     if (error) {
       console.error('Failed to update task:', error.message)
@@ -244,7 +293,7 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
       res.status(404).json({ error: 'Task not found' })
       return
     }
-
+ 
     // Complete adds a new completion; Undo removes the ones from the current period.
     const sql = body.completed
       ? 'INSERT INTO completions (task_id, user_id, completed_at) VALUES (?, ?, ?)'
@@ -252,7 +301,7 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
     const params = body.completed
       ? [id, req.user.userId, new Date().toISOString()]
       : [id, periodStart(task.frequency)]
-
+ 
     db.run(sql, params, (error) => {
       if (error) {
         console.error('Failed to update task:', error.message)
@@ -273,7 +322,7 @@ app.use(express.static(distPath))
 app.use((req, res) => {
   res.sendFile(path.join(distPath, 'index.html'))
 })
-
+ 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
 })
