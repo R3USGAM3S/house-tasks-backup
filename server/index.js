@@ -1,4 +1,5 @@
 const express = require('express')
+const path = require('path')
 const cors = require('cors')
 const db = require('./database')
 const app = express()
@@ -170,6 +171,44 @@ app.post('/api/tasks', requireAuth, (req, res) => {
     }
   )
 })
+function createToken(user) {
+  return jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' })
+}
+
+// New residents create their own account with the shared house code (HOUSE_CODE in .env)
+app.post('/api/register', async (req, res) => {
+  const { username, password, houseCode } = req.body ?? {}
+
+  if (!process.env.HOUSE_CODE) {
+    return res.status(403).json({ error: 'Registration is not enabled' })
+  }
+  if (houseCode !== process.env.HOUSE_CODE) {
+    return res.status(403).json({ error: 'Wrong house code' })
+  }
+  if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,20}$/.test(username)) {
+    return res.status(400).json({ error: 'Username must be 3-20 letters, numbers, _ or -' })
+  }
+  if (typeof password !== 'string' || password.length < 1) {
+    return res.status(400).json({ error: 'Password is required' })
+  }
+
+  const hash = await bcrypt.hash(password, 10)
+  db.run(
+    'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+    [username, hash],
+    function (error) {
+      if (error) {
+        if (error.message.includes('UNIQUE')) {
+          return res.status(409).json({ error: 'Username is already taken' })
+        }
+        console.error('Failed to create user:', error.message)
+        return res.status(500).json({ error: 'Failed to create user' })
+      }
+      res.status(201).json({ token: createToken({ id: this.lastID, username }) })
+    }
+  )
+})
+
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body ?? {}
   if (typeof username !== 'string' || typeof password !== 'string') {
@@ -179,8 +218,7 @@ app.post('/api/login', (req, res) => {
     if (error) return res.status(500).json({ error: 'Database error' })
     const ok = user && await bcrypt.compare(password, user.password_hash)
     if (!ok) return res.status(401).json({ error: 'Invalid username or password' })
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' })
-    res.json({ token })
+    res.json({ token: createToken(user) })
   })
 })
 app.patch('/api/tasks/:id', requireAuth, (req, res) => {
@@ -229,6 +267,13 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
     })
   })
 })
+// Serve the built frontend (npm run build creates the dist folder)
+const distPath = path.join(__dirname, '..', 'dist')
+app.use(express.static(distPath))
+app.use((req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'))
+})
+
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`)
+  console.log(`Server running on http://localhost:${PORT}`)
 })

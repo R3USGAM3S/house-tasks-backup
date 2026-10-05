@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Task } from './types/Task'
 import './App.css'
 import Login from './Login'
-const API_URL = 'http://localhost:3001/api'
+const API_URL = '/api'
 
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
