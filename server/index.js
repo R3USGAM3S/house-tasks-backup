@@ -13,6 +13,19 @@ if (!JWT_SECRET) {
 
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization ?? ''
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null
+  if (!token) {
+    return res.status(401).json({ error: 'Login required' })
+  }
+  try {
+    req.user = jwt.verify(token, JWT_SECRET)
+    next()
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+}
 
 const allowedFrequencies = ['Daily', 'Weekly', 'Biweekly', 'Monthly']
 
@@ -39,7 +52,7 @@ function validateTask(task) {
   return errors
 }
 
-app.get('/api/tasks', (req, res) => {
+app.get('/api/tasks', requireAuth, (req, res) => {
   db.all('SELECT * FROM tasks', (error, rows) => {
     if (error) {
       console.error('Failed to fetch tasks:', error.message)
@@ -61,7 +74,7 @@ app.get('/api/tasks', (req, res) => {
     res.json(tasks)
   })
 })
-app.post('/api/tasks', (req, res) => {
+app.post('/api/tasks', requireAuth, (req, res) => {
   const body = req.body ?? {}
   const errors = validateTask(body)
 
@@ -136,7 +149,7 @@ app.post('/api/login', (req, res) => {
     res.json({ token })
   })
 })
-app.patch('/api/tasks/:id', (req, res) => {
+app.patch('/api/tasks/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id)
   const body = req.body ?? {}
 
