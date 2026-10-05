@@ -3,6 +3,13 @@ const cors = require('cors')
 const db = require('./database')
 const app = express()
 const PORT = 3001
+const bcrypt = require('bcrypt')
+const jwt = require('jsonwebtoken')
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) {
+  console.error('JWT_SECRET puuttuu')
+  process.exit(1)
+}
 
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
@@ -115,6 +122,19 @@ app.post('/api/tasks', (req, res) => {
       })
     }
   )
+})
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body ?? {}
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'username and password are required' })
+  }
+  db.get('SELECT * FROM users WHERE username = ?', [username], async (error, user) => {
+    if (error) return res.status(500).json({ error: 'Database error' })
+    const ok = user && await bcrypt.compare(password, user.password_hash)
+    if (!ok) return res.status(401).json({ error: 'Invalid username or password' })
+    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' })
+    res.json({ token })
+  })
 })
 app.patch('/api/tasks/:id', (req, res) => {
   const id = Number(req.params.id)
