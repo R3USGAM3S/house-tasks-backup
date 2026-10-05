@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { AvatarPicker } from './Avatar'
+import { randomAvatar } from './avatarOptions'
 
 const API_URL = '/api'
 
@@ -12,6 +14,7 @@ function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('')
   const [houseCode, setHouseCode] = useState('')
   const [error, setError] = useState('')
+  const [avatar, setAvatar] = useState(randomAvatar)
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -19,7 +22,7 @@ function Login({ onLogin }: LoginProps) {
 
     const url = isRegistering ? `${API_URL}/register` : `${API_URL}/login`
     const body = isRegistering
-      ? { username, password, houseCode }
+      ? { username, password, houseCode, shape: avatar.shape, color: avatar.color }
       : { username, password }
 
     try {
@@ -63,12 +66,20 @@ function Login({ onLogin }: LoginProps) {
         onChange={(event) => setPassword(event.target.value)}
       />
       {isRegistering && (
-        <input
-          type="password"
-          placeholder="House code"
-          value={houseCode}
-          onChange={(event) => setHouseCode(event.target.value)}
-        />
+        <>
+          <input
+            type="password"
+            placeholder="House code"
+            value={houseCode}
+            onChange={(event) => setHouseCode(event.target.value)}
+          />
+          <p>Pick your shape and color</p>
+          <AvatarPicker
+            shape={avatar.shape}
+            color={avatar.color}
+            onChange={(shape, color) => setAvatar({ shape, color })}
+          />
+        </>
       )}
       <button type="submit">{isRegistering ? 'Create account' : 'Log in'}</button>
       <button type="button" onClick={switchMode}>

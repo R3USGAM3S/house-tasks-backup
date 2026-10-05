@@ -31,6 +31,21 @@ db.serialize(() => {
   password_hash TEXT NOT NULL
 )`)
 
+  // Avatar columns were added later, so add them to existing databases too
+  db.all('PRAGMA table_info(users)', (error, columns) => {
+    if (error) {
+      console.error('Failed to read users table:', error.message)
+      return
+    }
+    const names = columns.map((column) => column.name)
+    if (!names.includes('shape')) {
+      db.run("ALTER TABLE users ADD COLUMN shape TEXT NOT NULL DEFAULT 'circle'")
+    }
+    if (!names.includes('color')) {
+      db.run("ALTER TABLE users ADD COLUMN color TEXT NOT NULL DEFAULT '#16a34a'")
+    }
+  })
+
   db.run(`CREATE TABLE IF NOT EXISTS completions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id),

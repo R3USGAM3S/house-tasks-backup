@@ -145,3 +145,76 @@
 .task-details ul {
   padding-left: 1.2rem;
 }
+
+/* Section buttons: Daily / Weekly / Biweekly / Monthly */
+.section {
+  margin-bottom: 1rem;
+}
+
+:where(#root) .section-button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.9rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+:where(#root) .section-button.all-done {
+  --done-green: #16a34a;
+  color: var(--done-green);
+  border-color: var(--done-green);
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(#root) .section-button.all-done {
+    --done-green: #4ade80;
+  }
+}
+
+:where(#root) .section-button.all-done:hover {
+  background: var(--done-green);
+  color: var(--bg);
+}
+
+/* Avatars: each user's own shape and color */
+.avatar {
+  display: inline-block;
+  vertical-align: -0.1em;
+}
+
+#root .profile {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.avatar-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.avatar-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+:where(#root) .avatar-option {
+  padding: 0.3rem;
+  line-height: 0;
+  border-color: transparent;
+}
+
+:where(#root) .avatar-option:hover {
+  background: transparent;
+}
+
+:where(#root) .avatar-option.selected {
+  border-color: var(--text-h);
+}

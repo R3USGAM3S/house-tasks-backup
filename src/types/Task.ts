@@ -4,6 +4,8 @@ export interface Task {
   frequency: string
   completed: boolean
   completedBy: string | null
+  completedByShape: string | null
+  completedByColor: string | null
   completedAt: string | null
   instructions: string[]
   supplies: string[]
