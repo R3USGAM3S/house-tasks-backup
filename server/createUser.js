@@ -9,6 +9,10 @@ if (!username || !password) {
   console.error('Usage: node createUser.js <username> <password>')
   process.exit(1)
 }
+if (password.length < 8) {
+  console.error('Password must be at least 8 characters')
+  process.exit(1)
+}
 
 bcrypt.hash(password, 10).then((hash) => {
   db.run(

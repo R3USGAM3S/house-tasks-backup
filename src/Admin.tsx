@@ -18,23 +18,36 @@ interface AdminUser {
   completionCount: number
 }
 
+const TOKEN_KEY = 'adminToken'
+
+class LoginRequired extends Error {}
+
+function adminHeaders() {
+  return { Authorization: `Bearer ${sessionStorage.getItem(TOKEN_KEY) ?? ''}` }
+}
+
 async function fetchAdminData(): Promise<{ info: AdminInfo; users: AdminUser[] }> {
   const [infoResponse, usersResponse] = await Promise.all([
-    fetch(`${API_URL}/info`),
-    fetch(`${API_URL}/users`),
+    fetch(`${API_URL}/info`, { headers: adminHeaders() }),
+    fetch(`${API_URL}/users`, { headers: adminHeaders() }),
   ])
+  if (infoResponse.status === 401 || usersResponse.status === 401) {
+    throw new LoginRequired()
+  }
   if (!infoResponse.ok || !usersResponse.ok) {
-    throw new Error('Admin page only works on the house computer')
+    throw new Error('Could not load admin data')
   }
   return { info: await infoResponse.json(), users: await usersResponse.json() }
 }
 
-// Admin page for the house computer: open http://localhost:3001/admin
-// The server only answers these requests from the computer itself.
+// Admin page: open /admin and log in with ADMIN_PASSWORD.
+// The login lasts 2 hours or until the browser tab is closed.
 function Admin() {
   const [info, setInfo] = useState<AdminInfo | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [message, setMessage] = useState('')
+  const [loggedIn, setLoggedIn] = useState(Boolean(sessionStorage.getItem(TOKEN_KEY)))
+  const [password, setPassword] = useState('')
 
   function load() {
     fetchAdminData()
@@ -42,18 +55,59 @@ function Admin() {
         setInfo(data.info)
         setUsers(data.users)
       })
-      .catch((error) => setMessage(error.message))
+      .catch((error) => {
+        if (error instanceof LoginRequired) {
+          sessionStorage.removeItem(TOKEN_KEY)
+          setLoggedIn(false)
+          return
+        }
+        setMessage(error.message)
+      })
   }
 
   useEffect(() => {
-    load()
-  }, [])
+    if (loggedIn) load()
+  }, [loggedIn])
+
+  async function logIn(event: React.FormEvent) {
+    event.preventDefault()
+    const response = await fetch(`${API_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setMessage(data.error ?? 'Login failed')
+      return
+    }
+    sessionStorage.setItem(TOKEN_KEY, data.token)
+    setPassword('')
+    setMessage('')
+    setLoggedIn(true)
+  }
 
   async function runAction(question: string, url: string, method: string, done: string) {
     if (!window.confirm(question)) return
-    const response = await fetch(url, { method })
+    const response = await fetch(url, { method, headers: adminHeaders() })
     setMessage(response.ok ? done : 'Something went wrong')
     load()
+  }
+
+  if (!loggedIn) {
+    return (
+      <form onSubmit={logIn}>
+        <h1>House Tasks Admin</h1>
+        <input
+          type="password"
+          placeholder="Admin password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <button type="submit">Log in</button>
+        {message && <p>{message}</p>}
+      </form>
+    )
   }
 
   return (
@@ -62,7 +116,7 @@ function Admin() {
 
       <div className="admin-box">
         <h2>Open on phone</h2>
-        {info?.addresses.length === 0 && <p>No Wi-Fi connection found</p>}
+        {info?.addresses.length === 0 && <p>No address found</p>}
         {info?.addresses.map((address) => (
           <div key={address.url} className="admin-qr">
             <img src={address.qr} alt={`QR code for ${address.url}`} />

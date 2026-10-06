@@ -1,12 +1,22 @@
-const express = require('express')
 const path = require('path')
+
+// Settings come from server/.env if it exists (on Plesk they can be set in the Node.js panel instead)
+try {
+  process.loadEnvFile(path.join(__dirname, '.env'))
+} catch {
+  // no .env file: use the environment variables as they are
+}
+
+const express = require('express')
 const os = require('os')
+const crypto = require('crypto')
 const QRCode = require('qrcode')
 const cors = require('cors')
 const db = require('./database')
 const syncTasks = require('./syncTasks')
 const app = express()
-const PORT = 3001
+const PORT = Number(process.env.PORT) || 3001
+const MIN_PASSWORD_LENGTH = 8
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 const JWT_SECRET = process.env.JWT_SECRET
@@ -17,6 +27,37 @@ if (!JWT_SECRET) {
  
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
+
+// On the server the app runs behind Plesk's web server. This makes req.ip the real visitor address.
+app.set('trust proxy', 'loopback')
+
+// Limits wrong login, sign-up and admin password attempts: 10 per 15 minutes per address
+const failedAttempts = new Map()
+const MAX_ATTEMPTS = 10
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000
+
+function isBlocked(key) {
+  const entry = failedAttempts.get(key)
+  if (!entry) return false
+  if (Date.now() - entry.first > ATTEMPT_WINDOW_MS) {
+    failedAttempts.delete(key)
+    return false
+  }
+  return entry.count >= MAX_ATTEMPTS
+}
+
+function recordFailure(key) {
+  const entry = failedAttempts.get(key)
+  if (!entry || Date.now() - entry.first > ATTEMPT_WINDOW_MS) {
+    failedAttempts.set(key, { count: 1, first: Date.now() })
+  } else {
+    entry.count += 1
+  }
+}
+
+function tooManyAttempts(res) {
+  res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' })
+}
 function requireAuth(req, res, next) {
   const header = req.headers.authorization ?? ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
@@ -25,6 +66,8 @@ function requireAuth(req, res, next) {
   }
   try {
     req.user = jwt.verify(token, JWT_SECRET)
+    // Admin tokens are only for the admin page
+    if (!req.user.userId) throw new Error('Not a user token')
     next()
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' })
@@ -204,14 +247,19 @@ app.post('/api/register', async (req, res) => {
   if (!process.env.HOUSE_CODE) {
     return res.status(403).json({ error: 'Registration is not enabled' })
   }
+  const attemptKey = `register:${req.ip}`
+  if (isBlocked(attemptKey)) {
+    return tooManyAttempts(res)
+  }
   if (houseCode !== process.env.HOUSE_CODE) {
+    recordFailure(attemptKey)
     return res.status(403).json({ error: 'Wrong house code' })
   }
   if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{3,20}$/.test(username)) {
     return res.status(400).json({ error: 'Username must be 3-20 letters, numbers, _ or -' })
   }
-  if (typeof password !== 'string' || password.length < 1) {
-    return res.status(400).json({ error: 'Password is required' })
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` })
   }
  
   if (!allowedShapes.includes(shape) || !allowedColors.includes(color)) {
@@ -269,10 +317,18 @@ app.post('/api/login', (req, res) => {
   if (typeof username !== 'string' || typeof password !== 'string') {
     return res.status(400).json({ error: 'username and password are required' })
   }
+  const attemptKey = `login:${req.ip}`
+  if (isBlocked(attemptKey)) {
+    return tooManyAttempts(res)
+  }
   db.get('SELECT * FROM users WHERE username = ?', [username], async (error, user) => {
     if (error) return res.status(500).json({ error: 'Database error' })
     const ok = user && await bcrypt.compare(password, user.password_hash)
-    if (!ok) return res.status(401).json({ error: 'Invalid username or password' })
+    if (!ok) {
+      recordFailure(attemptKey)
+      return res.status(401).json({ error: 'Invalid username or password' })
+    }
+    failedAttempts.delete(attemptKey)
     res.json({ token: createToken(user) })
   })
 })
@@ -334,19 +390,47 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
   })
 })
 // ----- Admin page (/admin) -----
-// Admin routes only answer requests made on this machine itself,
-// so phones on the Wi-Fi can't clear users or tasks.
-function requireLocal(req, res, next) {
-  const address = req.socket.remoteAddress
-  if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) {
-    next()
-    return
-  }
-  res.status(403).json({ error: 'Admin is only available on the house computer' })
+// The admin page asks for ADMIN_PASSWORD (in .env or the Plesk settings).
+// Without ADMIN_PASSWORD the admin page is switched off.
+function sameText(a, b) {
+  // Compares without leaking how many characters matched
+  const hashA = crypto.createHash('sha256').update(String(a)).digest()
+  const hashB = crypto.createHash('sha256').update(String(b)).digest()
+  return crypto.timingSafeEqual(hashA, hashB)
 }
 
-// The addresses other devices on the Wi-Fi can use to open the app
-function wifiAddresses() {
+app.post('/api/admin/login', (req, res) => {
+  if (!process.env.ADMIN_PASSWORD) {
+    return res.status(403).json({ error: 'Admin page is not enabled (ADMIN_PASSWORD missing)' })
+  }
+  const attemptKey = `admin:${req.ip}`
+  if (isBlocked(attemptKey)) {
+    return tooManyAttempts(res)
+  }
+  if (!sameText(req.body?.password ?? '', process.env.ADMIN_PASSWORD)) {
+    recordFailure(attemptKey)
+    return res.status(401).json({ error: 'Wrong admin password' })
+  }
+  failedAttempts.delete(attemptKey)
+  res.json({ token: jwt.sign({ admin: true }, JWT_SECRET, { expiresIn: '2h' }) })
+})
+
+function requireAdmin(req, res, next) {
+  const header = req.headers.authorization ?? ''
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null
+  try {
+    if (!token || jwt.verify(token, JWT_SECRET).admin !== true) throw new Error('Not admin')
+    next()
+  } catch {
+    res.status(401).json({ error: 'Admin login required' })
+  }
+}
+
+// The address residents use to open the app.
+// On the server: PUBLIC_URL, for example https://tasks.example.com
+// At home: the computer's Wi-Fi addresses
+function appAddresses() {
+  if (process.env.PUBLIC_URL) return [process.env.PUBLIC_URL]
   const addresses = []
   for (const list of Object.values(os.networkInterfaces())) {
     for (const item of list ?? []) {
@@ -369,7 +453,7 @@ function sendDbResult(res, message) {
   }
 }
 
-app.get('/api/admin/info', requireLocal, (req, res) => {
+app.get('/api/admin/info', requireAdmin, (req, res) => {
   db.get(
     'SELECT (SELECT COUNT(*) FROM users) AS userCount, (SELECT COUNT(*) FROM tasks) AS taskCount',
     (error, row) => {
@@ -379,13 +463,13 @@ app.get('/api/admin/info', requireLocal, (req, res) => {
       }
       // A QR code per address, so phones can open the app by scanning
       Promise.all(
-        wifiAddresses().map(async (url) => ({ url, qr: await QRCode.toDataURL(url, { margin: 1, width: 240 }) })),
+        appAddresses().map(async (url) => ({ url, qr: await QRCode.toDataURL(url, { margin: 1, width: 240 }) })),
       ).then((addresses) => res.json({ addresses, ...row }))
     },
   )
 })
 
-app.get('/api/admin/users', requireLocal, (req, res) => {
+app.get('/api/admin/users', requireAdmin, (req, res) => {
   const sql = `
     SELECT users.id, users.username, users.shape, users.color,
            COUNT(completions.id) AS completionCount
@@ -402,7 +486,7 @@ app.get('/api/admin/users', requireLocal, (req, res) => {
   })
 })
 
-app.delete('/api/admin/users/:id', requireLocal, (req, res) => {
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id)
   if (!Number.isInteger(id)) {
     res.status(400).json({ error: 'Invalid user id' })
@@ -414,19 +498,19 @@ app.delete('/api/admin/users/:id', requireLocal, (req, res) => {
   })
 })
 
-app.post('/api/admin/clear-users', requireLocal, (req, res) => {
+app.post('/api/admin/clear-users', requireAdmin, (req, res) => {
   db.serialize(() => {
     db.run('DELETE FROM completions')
     db.run('DELETE FROM users', sendDbResult(res, 'Clear users'))
   })
 })
 
-app.post('/api/admin/clear-completions', requireLocal, (req, res) => {
+app.post('/api/admin/clear-completions', requireAdmin, (req, res) => {
   db.run('DELETE FROM completions', sendDbResult(res, 'Clear completions'))
 })
 
 // Same as resetTasks.js: makes the tasks match taskList.js, keeps history of kept tasks
-app.post('/api/admin/reset-tasks', requireLocal, (req, res) => {
+app.post('/api/admin/reset-tasks', requireAdmin, (req, res) => {
   syncTasks(db, { removeMissing: true }, sendDbResult(res, 'Reload tasks'))
 })
 
@@ -437,7 +521,19 @@ app.use((req, res) => {
   res.sendFile(path.join(distPath, 'index.html'))
 })
  
-app.listen(PORT, () => {
+app.listen(PORT, (error) => {
+  // Express 5 reports startup errors here, for example when the port is already in use
+  if (error) {
+    console.error(`Server could not start on port ${PORT}: ${error.message}`)
+    if (error.code === 'EADDRINUSE') {
+      console.error('Another server is already running on this port. Stop it first (Ctrl+C in its terminal).')
+    }
+    process.exit(1)
+  }
   console.log(`Server running on http://localhost:${PORT}`)
   console.log(`Admin page: http://localhost:${PORT}/admin`)
+  if (!process.env.ADMIN_PASSWORD) console.log('ADMIN_PASSWORD is not set: admin page is off')
+  if ((process.env.HOUSE_CODE ?? '').length < 12) {
+    console.log('Warning: HOUSE_CODE should be at least 12 characters on a public server')
+  }
 })
