@@ -61,7 +61,7 @@ function Login({ onLogin }: LoginProps) {
       />
       <input
         type="password"
-        placeholder="Password"
+        placeholder={isRegistering ? 'Password (at least 8 characters)' : 'Password'}
         value={password}
         onChange={(event) => setPassword(event.target.value)}
       />
