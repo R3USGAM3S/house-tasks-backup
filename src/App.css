@@ -230,3 +230,46 @@
 :where(#root) .avatar-option.selected {
   border-color: var(--text-h);
 }
+
+/* Admin page (/admin) */
+.admin-qr {
+  text-align: center;
+}
+
+.admin-qr img {
+  width: 240px;
+  max-width: 100%;
+  image-rendering: pixelated;
+  background: #fff;
+}
+
+.admin-box {
+  border: 3px solid var(--text-h);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-address {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1rem;
+  color: var(--text-h);
+  word-break: break-all;
+}
+
+.admin-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.admin-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.admin-message {
+  text-align: center;
+}

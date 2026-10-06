@@ -1,7 +1,10 @@
 const express = require('express')
 const path = require('path')
+const os = require('os')
+const QRCode = require('qrcode')
 const cors = require('cors')
 const db = require('./database')
+const taskList = require('./taskList')
 const app = express()
 const PORT = 3001
 const bcrypt = require('bcrypt')
@@ -316,6 +319,112 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
     })
   })
 })
+// ----- Admin page (/admin) -----
+// Admin routes only answer requests made on this machine itself,
+// so phones on the Wi-Fi can't clear users or tasks.
+function requireLocal(req, res, next) {
+  const address = req.socket.remoteAddress
+  if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) {
+    next()
+    return
+  }
+  res.status(403).json({ error: 'Admin is only available on the house computer' })
+}
+
+// The addresses other devices on the Wi-Fi can use to open the app
+function wifiAddresses() {
+  const addresses = []
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const item of list ?? []) {
+      if (item.family === 'IPv4' && !item.internal) {
+        addresses.push(`http://${item.address}:${PORT}`)
+      }
+    }
+  }
+  return addresses
+}
+
+function sendDbResult(res, message) {
+  return (error) => {
+    if (error) {
+      console.error(`${message} failed:`, error.message)
+      res.status(500).json({ error: `${message} failed` })
+      return
+    }
+    res.json({ ok: true })
+  }
+}
+
+app.get('/api/admin/info', requireLocal, (req, res) => {
+  db.get(
+    'SELECT (SELECT COUNT(*) FROM users) AS userCount, (SELECT COUNT(*) FROM tasks) AS taskCount',
+    (error, row) => {
+      if (error) {
+        res.status(500).json({ error: 'Failed to read database' })
+        return
+      }
+      // A QR code per address, so phones can open the app by scanning
+      Promise.all(
+        wifiAddresses().map(async (url) => ({ url, qr: await QRCode.toDataURL(url, { margin: 1, width: 240 }) })),
+      ).then((addresses) => res.json({ addresses, ...row }))
+    },
+  )
+})
+
+app.get('/api/admin/users', requireLocal, (req, res) => {
+  const sql = `
+    SELECT users.id, users.username, users.shape, users.color,
+           COUNT(completions.id) AS completionCount
+    FROM users
+    LEFT JOIN completions ON completions.user_id = users.id
+    GROUP BY users.id
+    ORDER BY users.username`
+  db.all(sql, (error, rows) => {
+    if (error) {
+      res.status(500).json({ error: 'Failed to read users' })
+      return
+    }
+    res.json(rows)
+  })
+})
+
+app.delete('/api/admin/users/:id', requireLocal, (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: 'Invalid user id' })
+    return
+  }
+  db.serialize(() => {
+    db.run('DELETE FROM completions WHERE user_id = ?', [id])
+    db.run('DELETE FROM users WHERE id = ?', [id], sendDbResult(res, 'Delete user'))
+  })
+})
+
+app.post('/api/admin/clear-users', requireLocal, (req, res) => {
+  db.serialize(() => {
+    db.run('DELETE FROM completions')
+    db.run('DELETE FROM users', sendDbResult(res, 'Clear users'))
+  })
+})
+
+app.post('/api/admin/clear-completions', requireLocal, (req, res) => {
+  db.run('DELETE FROM completions', sendDbResult(res, 'Clear completions'))
+})
+
+// Same as resetTasks.js: replaces all tasks with taskList.js
+app.post('/api/admin/reset-tasks', requireLocal, (req, res) => {
+  db.serialize(() => {
+    db.run('DELETE FROM completions')
+    db.run('DELETE FROM tasks')
+    db.run("DELETE FROM sqlite_sequence WHERE name = 'tasks'")
+    const insertTask = db.prepare('INSERT INTO tasks (name, frequency) VALUES (?, ?)')
+    for (const task of taskList) {
+      insertTask.run(task.name, task.frequency)
+    }
+    insertTask.finalize(sendDbResult(res, 'Reset tasks'))
+  })
+})
+
 // Serve the built frontend (npm run build creates the dist folder)
 const distPath = path.join(__dirname, '..', 'dist')
 app.use(express.static(distPath))
@@ -325,4 +434,5 @@ app.use((req, res) => {
  
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
+  console.log(`Admin page: http://localhost:${PORT}/admin`)
 })
