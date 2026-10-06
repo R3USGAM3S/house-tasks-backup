@@ -1,6 +1,6 @@
 const path = require('path')
 const sqlite3 = require('sqlite3').verbose()
-const taskList = require('./taskList')
+const syncTasks = require('./syncTasks')
 
 const db = new sqlite3.Database(path.join(__dirname, 'house-tasks.db'), (error) => {
   if (error) {
@@ -54,21 +54,10 @@ db.serialize(() => {
 )`)
 
 
-  db.get('SELECT COUNT(*) AS count FROM tasks', (error, row) => {
-    if (error) {
-      console.error('Failed to count tasks:', error.message)
-      return
-    }
-
-    if (row.count === 0) {
-      const insertTask = db.prepare('INSERT INTO tasks (name, frequency) VALUES (?, ?)')
-      for (const task of taskList) {
-        insertTask.run(task.name, task.frequency)
-      }
-      insertTask.finalize()
-
-      console.log('Inserted initial tasks into database')
-    }
+  // Adds new tasks from taskList.js and updates instructions of existing ones.
+  // Never deletes tasks here; the admin page's Reload task list does that.
+  syncTasks(db, {}, (error) => {
+    if (error) console.error('Failed to load task list:', error.message)
   })
 })
 

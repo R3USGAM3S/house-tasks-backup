@@ -4,7 +4,7 @@ const os = require('os')
 const QRCode = require('qrcode')
 const cors = require('cors')
 const db = require('./database')
-const taskList = require('./taskList')
+const syncTasks = require('./syncTasks')
 const app = express()
 const PORT = 3001
 const bcrypt = require('bcrypt')
@@ -31,7 +31,7 @@ function requireAuth(req, res, next) {
   }
 }
  
-const allowedFrequencies = ['Daily', 'Weekly', 'Biweekly', 'Monthly']
+const allowedFrequencies = ['Daily', 'Weekly', 'Biweekly', 'Monthly', 'Other']
  
 // Keep these in sync with src/avatarOptions.ts
 const allowedShapes = ['circle', 'square', 'triangle', 'diamond', 'star', 'heart']
@@ -57,6 +57,9 @@ function periodStart(frequency) {
     start.setDate(start.getDate() - 13)
   } else if (frequency === 'Monthly') {
     start.setDate(1)
+  } else if (frequency === 'Other') {
+    // No fixed schedule: shows as done for 90 days
+    start.setDate(start.getDate() - 89)
   }
   return start.toISOString()
 }
@@ -273,6 +276,17 @@ app.post('/api/login', (req, res) => {
     res.json({ token: createToken(user) })
   })
 })
+// A phone that was offline sends the time the button was pressed.
+// Use it if it is a valid time in the past, otherwise use the current time.
+function completionTime(value) {
+  const now = new Date()
+  const time = typeof value === 'string' ? new Date(value) : null
+  if (!time || Number.isNaN(time.getTime()) || time > now) {
+    return now.toISOString()
+  }
+  return time.toISOString()
+}
+
 app.patch('/api/tasks/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id)
   const body = req.body ?? {}
@@ -302,7 +316,7 @@ app.patch('/api/tasks/:id', requireAuth, (req, res) => {
       ? 'INSERT INTO completions (task_id, user_id, completed_at) VALUES (?, ?, ?)'
       : 'DELETE FROM completions WHERE task_id = ? AND completed_at >= ?'
     const params = body.completed
-      ? [id, req.user.userId, new Date().toISOString()]
+      ? [id, req.user.userId, completionTime(body.completedAt)]
       : [id, periodStart(task.frequency)]
  
     db.run(sql, params, (error) => {
@@ -411,18 +425,9 @@ app.post('/api/admin/clear-completions', requireLocal, (req, res) => {
   db.run('DELETE FROM completions', sendDbResult(res, 'Clear completions'))
 })
 
-// Same as resetTasks.js: replaces all tasks with taskList.js
+// Same as resetTasks.js: makes the tasks match taskList.js, keeps history of kept tasks
 app.post('/api/admin/reset-tasks', requireLocal, (req, res) => {
-  db.serialize(() => {
-    db.run('DELETE FROM completions')
-    db.run('DELETE FROM tasks')
-    db.run("DELETE FROM sqlite_sequence WHERE name = 'tasks'")
-    const insertTask = db.prepare('INSERT INTO tasks (name, frequency) VALUES (?, ?)')
-    for (const task of taskList) {
-      insertTask.run(task.name, task.frequency)
-    }
-    insertTask.finalize(sendDbResult(res, 'Reset tasks'))
-  })
+  syncTasks(db, { removeMissing: true }, sendDbResult(res, 'Reload tasks'))
 })
 
 // Serve the built frontend (npm run build creates the dist folder)

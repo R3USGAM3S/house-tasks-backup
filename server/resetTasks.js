@@ -1,19 +1,10 @@
 const db = require('./database')
-const taskList = require('./taskList')
+const syncTasks = require('./syncTasks')
 
-// Replaces all tasks with the list in taskList.js.
-// Also clears completion history, because it points to the old tasks.
-db.serialize(() => {
-  db.run('DELETE FROM completions')
-  db.run('DELETE FROM tasks')
-  db.run("DELETE FROM sqlite_sequence WHERE name = 'tasks'")
-
-  const insertTask = db.prepare('INSERT INTO tasks (name, frequency) VALUES (?, ?)')
-  for (const task of taskList) {
-    insertTask.run(task.name, task.frequency)
-  }
-  insertTask.finalize()
-
-  db.close(() => console.log(`Tasks replaced: ${taskList.length} tasks`))
+// Makes the database match taskList.js: adds, updates and removes tasks.
+// Completion history of tasks that stay in the list is kept.
+syncTasks(db, { removeMissing: true }, (error, count) => {
+  if (error) console.error('Failed:', error.message)
+  else console.log(`Task list updated: ${count} tasks`)
+  db.close()
 })
-
