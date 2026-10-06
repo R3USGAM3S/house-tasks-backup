@@ -149,13 +149,20 @@
 }
 
 .task-details {
+  text-align: left;
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 2px dashed var(--card-color);
 }
 
-.task-details ul {
-  padding-left: 1.2rem;
+.task-details ul,
+.task-details ol {
+  padding-left: 1.6rem;
+}
+
+.task-actions .instructions-button {
+  width: 100%;
+  text-align: left;
 }
 
 /* Section buttons: Daily / Weekly / Biweekly / Monthly */
@@ -271,5 +278,13 @@
 }
 
 .admin-message {
+  text-align: center;
+}
+
+/* Shown while Complete/Undo clicks wait on the phone to be sent */
+.offline-banner {
+  border: 2px dashed #eab308;
+  color: #eab308;
+  padding: 0.5rem;
   text-align: center;
 }

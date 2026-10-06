@@ -3,9 +3,11 @@ import type { Task } from './types/Task'
 import './App.css'
 import Login from './Login'
 import { Avatar, AvatarPicker } from './Avatar'
+import { addToQueue, loadQueue, sendChange, syncQueue } from './offlineQueue'
 const API_URL = '/api'
 
-const sections = ['Daily', 'Weekly', 'Biweekly', 'Monthly']
+// Other = tasks with no fixed schedule, like defrosting the freezer
+const sections = ['Daily', 'Weekly', 'Biweekly', 'Monthly', 'Other']
 
 interface Profile {
   username: string
@@ -24,6 +26,7 @@ function App() {
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [openTaskId, setOpenTaskId] = useState<number | null>(null)
   const [openSection, setOpenSection] = useState<string | null>(null)
+  const [pendingCount, setPendingCount] = useState(loadQueue().length)
   const handleLogin = (newToken: string) => {
     localStorage.setItem('token', newToken)
     setToken(newToken)
@@ -36,18 +39,39 @@ function App() {
 
   useEffect(() => {
     if (!token) return
-    fetch(`${API_URL}/tasks`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((response) => {
-        if (response.status === 401) {
-          handleLogout()
-          return []
-        }
-        return response.json()
-      })
-      .then((data) => setTasks(data))
-      .catch((error) => console.error('Failed to fetch tasks:', error))
+
+    // First send changes saved while offline, then load the up-to-date list
+    const refresh = () => {
+      syncQueue(token)
+        .then(({ result, left }) => {
+          setPendingCount(left)
+          if (result === 'unauthorized') {
+            handleLogout()
+            return
+          }
+          if (result === 'offline') return
+          return fetch(`${API_URL}/tasks`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((response) => {
+              if (response.status === 401) {
+                handleLogout()
+                return []
+              }
+              return response.json()
+            })
+            .then((data) => setTasks(data))
+        })
+        .catch((error) => console.error('Failed to fetch tasks:', error))
+    }
+
+    refresh()
+
+    // Try again when the phone gets its connection back, and every 20 s while changes wait
+    window.addEventListener('online', refresh)
+    const timer = setInterval(() => {
+      if (loadQueue().length > 0) refresh()
+    }, 20000)
 
     fetch(`${API_URL}/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -55,6 +79,11 @@ function App() {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => setMe(data))
       .catch((error) => console.error('Failed to fetch profile:', error))
+
+    return () => {
+      window.removeEventListener('online', refresh)
+      clearInterval(timer)
+    }
   }, [token])
 
   const saveProfile = async (shape: string, color: string) => {
@@ -89,46 +118,40 @@ function App() {
 
   const toggleTask = async (id: number) => {
     const task = tasks.find((t) => t.id === id)
-    if (!task) return
+    if (!task || !token) return
 
-    const newCompleted = !task.completed
+    const change = { taskId: id, completed: !task.completed, at: new Date().toISOString() }
 
-    try {
-      const response = await fetch(`${API_URL}/tasks/${id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ completed: newCompleted }),
-      })
+    // If older changes are still waiting, this one waits too so the order stays right
+    const result = loadQueue().length > 0 ? 'offline' : await sendChange(change, token)
 
-      if (response.status === 401) {
-        handleLogout()
-        return
-      }
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`)
-      }
-
-      const data = await response.json()
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === id
-            ? {
-                ...t,
-                completed: data.completed,
-                completedBy: data.completedBy,
-                completedByShape: data.completed ? me?.shape ?? null : null,
-                completedByColor: data.completed ? me?.color ?? null : null,
-                completedAt: data.completed ? new Date().toISOString() : null,
-              }
-            : t
-        )
-      )
-    } catch (error) {
-      console.error('Failed to update task:', error)
+    if (result === 'unauthorized') {
+      handleLogout()
+      return
     }
+    if (result === 'rejected') {
+      console.error('Server did not accept the change')
+      return
+    }
+    if (result === 'offline') {
+      setPendingCount(addToQueue(change).length)
+    }
+
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              completed: change.completed,
+              completedBy: change.completed ? me?.username ?? null : null,
+              completedByShape: change.completed ? me?.shape ?? null : null,
+              completedByColor: change.completed ? me?.color ?? null : null,
+              completedAt: change.completed ? change.at : null,
+              pending: result === 'offline',
+            }
+          : t
+      )
+    )
   }
 
   if (!token) {
@@ -151,6 +174,13 @@ function App() {
       {me && isEditingProfile && (
         <AvatarPicker shape={me.shape} color={me.color} onChange={saveProfile} />
       )}
+      {pendingCount > 0 && (
+        <p className="offline-banner">
+          Offline: {pendingCount} change{pendingCount === 1 ? '' : 's'} saved on this phone.
+          They are sent when the house computer can be reached.
+        </p>
+      )}
+
       <h2>Tasks</h2>
 
       {sections.map((section) => {
@@ -185,6 +215,7 @@ function App() {
                 ) : (
                   <p>Not completed</p>
                 )}
+                {task.pending && <p>Waiting to sync</p>}
 
                 <div className="complete-row">
                   <button className="complete-button" onClick={() => toggleTask(task.id)}>
@@ -192,36 +223,49 @@ function App() {
                   </button>
                 </div>
 
-                <div className="task-actions">
-                  {hasDetails(task) && (
+                {hasDetails(task) && (
+                  <div className="task-actions">
                     <button
+                      className="instructions-button"
                       onClick={() =>
                         setOpenTaskId(openTaskId === task.id ? null : task.id)
                       }
                     >
-                      {openTaskId === task.id ? 'Hide details' : 'Show details'}
+                      {openTaskId === task.id ? '▼' : '▶'} Instructions
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {openTaskId === task.id && (
                   <div className="task-details">
-                    <h4>Instructions</h4>
-                    <ul>
-                      {task.instructions.map((instruction) => (
-                        <li key={instruction}>{instruction}</li>
-                      ))}
-                    </ul>
+                    {task.instructions.length > 0 && (
+                      <>
+                        <h4>Steps</h4>
+                        <ol>
+                          {task.instructions.map((instruction) => (
+                            <li key={instruction}>{instruction}</li>
+                          ))}
+                        </ol>
+                      </>
+                    )}
 
-                    <h4>Supplies</h4>
-                    <ul>
-                      {task.supplies.map((supply) => (
-                        <li key={supply}>{supply}</li>
-                      ))}
-                    </ul>
+                    {task.supplies.length > 0 && (
+                      <>
+                        <h4>Tools</h4>
+                        <ul>
+                          {task.supplies.map((supply) => (
+                            <li key={supply}>{supply}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
 
-                    <h4>Location</h4>
-                    <p>{task.supplyLocation}</p>
+                    {task.supplyLocation && (
+                      <>
+                        <h4>Where to find them</h4>
+                        <p>{task.supplyLocation}</p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
