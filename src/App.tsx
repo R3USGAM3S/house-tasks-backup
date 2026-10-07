@@ -4,6 +4,7 @@ import './App.css'
 import Login from './Login'
 import { Avatar, AvatarPicker } from './Avatar'
 import { addToQueue, loadQueue, sendChange, syncQueue } from './offlineQueue'
+import History from './History'
 const API_URL = '/api'
 
 // Other = tasks with no fixed schedule, like defrosting the freezer
@@ -27,6 +28,7 @@ function App() {
   const [openTaskId, setOpenTaskId] = useState<number | null>(null)
   const [openSection, setOpenSection] = useState<string | null>(null)
   const [pendingCount, setPendingCount] = useState(loadQueue().length)
+  const [view, setView] = useState<'tasks' | 'history'>('tasks')
   const handleLogin = (newToken: string) => {
     localStorage.setItem('token', newToken)
     setToken(newToken)
@@ -181,9 +183,16 @@ function App() {
         </p>
       )}
 
-      <h2>Tasks</h2>
+      <div className="view-tabs">
+        <button onClick={() => setView('tasks')} disabled={view === 'tasks'}>Tasks</button>
+        <button onClick={() => setView('history')} disabled={view === 'history'}>History</button>
+      </div>
 
-      {sections.map((section) => {
+      {view === 'history' && <History token={token} onUnauthorized={handleLogout} />}
+
+      {view === 'tasks' && <h2>Tasks</h2>}
+
+      {view === 'tasks' && sections.map((section) => {
         const sectionTasks = tasks.filter((task) => task.frequency === section)
         const doneCount = sectionTasks.filter((task) => task.completed).length
         const isOpen = openSection === section
@@ -205,6 +214,7 @@ function App() {
                 className={task.completed ? 'task-card completed' : 'task-card'}
               >
                 <h3>{task.name}</h3>
+                <p className="points">+{task.points} pts</p>
                 {task.estimatedTime && <p>Estimated time: {task.estimatedTime} min</p>}
                 {task.completed ? (
                   <p>
