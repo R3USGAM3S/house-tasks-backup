@@ -12,7 +12,7 @@ for (const file of [
   }
 }
 
-const bcrypt = require('bcrypt')
+const bcrypt = require('bcryptjs')
 const db = require('./database')
 
 // Usage: node createUser.js <username> <password>

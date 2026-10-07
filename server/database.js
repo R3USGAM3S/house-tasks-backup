@@ -1,4 +1,5 @@
-const { createClient } = require('@libsql/client')
+// Fetch-based client (no native bindings) — required on Vercel serverless
+const { createClient } = require('@libsql/client/web')
 const syncTasks = require('./syncTasks')
 
 let client

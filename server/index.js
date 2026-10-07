@@ -23,7 +23,7 @@ const syncTasks = require('./syncTasks')
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
 const MIN_PASSWORD_LENGTH = 8
-const bcrypt = require('bcrypt')
+const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET) {
