@@ -1,0 +1,12 @@
+.env
+.env.*
+**/.env
+**/.env.*
+server/.env
+*.db
+server/house-tasks.db
+.agents
+skills-lock.json
+node_modules
+server/node_modules
+.vercel/output

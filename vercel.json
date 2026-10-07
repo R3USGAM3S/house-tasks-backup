@@ -1,0 +1,14 @@
+{
+  "installCommand": "npm ci && npm ci --prefix server",
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "dist/**",
+      "excludeFiles": "{.env,.env.*,**/.env,**/.env.*,**/*.db,server/house-tasks.db}",
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ]
+}

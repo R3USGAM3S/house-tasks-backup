@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# House Tasks
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Shared household task board: React (Vite) frontend + Express API. Completions are stored in **Turso** (libSQL / SQLite-compatible).
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+# Frontend (proxies /api → localhost:3001)
+npm ci
+npm run dev
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+# API (separate terminal). Needs Turso env vars — pull from Vercel:
+vercel env pull .env.local --scope neduai
+# Or copy server/.env.example → server/.env and fill TURSO_* + JWT_SECRET etc.
+cd server && npm ci && npm start
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Open http://localhost:5173. Built app + API together: `npm run build && npm start` then http://localhost:3001.
+
+## Deploy targets
+
+| Host | Database | Notes |
+| --- | --- | --- |
+| **Vercel** (recommended) | Turso Marketplace (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) | Serverless Express under `/api`, static UI from `dist/`. See below. |
+| **Plesk Node.js** | Same Turso DB (set env in Plesk), or see older local-file notes in `DEPLOY.md` | Long-lived `node server/index.js`. Full steps in `DEPLOY.md`. |
+
+### Vercel + Turso
+
+1. Link the GitHub repo to the Vercel project; connect a Turso resource (Marketplace).
+2. Set `JWT_SECRET`, `HOUSE_CODE`, `ADMIN_PASSWORD`, `PUBLIC_URL` (Turso vars are injected automatically).
+3. Deploy: push to `main` or `vercel --scope neduai deploy --prod --yes`.
+
+`vercel.json` installs root + `server/` deps, builds the Vite app, rewrites `/api/*` to the serverless function and SPA routes to `index.html`.
+
+Never commit `.env`, `.env.local`, or database files.
