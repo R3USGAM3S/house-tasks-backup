@@ -183,7 +183,7 @@ function App() {
         </p>
       )}
 
-      <div className="view-tabs">
+      <div className="profile view-tabs">
         <button onClick={() => setView('tasks')} disabled={view === 'tasks'}>Tasks</button>
         <button onClick={() => setView('history')} disabled={view === 'history'}>History</button>
       </div>
