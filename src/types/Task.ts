@@ -11,6 +11,7 @@ export interface Task {
   supplies: string[]
   supplyLocation: string
   estimatedTime: number | null
+  points: number
   // true while the change is only saved on this phone (offline)
   pending?: boolean
 }
