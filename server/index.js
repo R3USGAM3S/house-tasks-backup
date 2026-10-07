@@ -172,6 +172,8 @@ function validateTask(task) {
 
   return errors
 }
+// Points for a task: its own points, or 1 point per started 5 minutes
+const POINTS_SQL = 'COALESCE(tasks.points, MAX(1, (COALESCE(tasks.estimated_time, 5) + 4) / 5))'
 
 function parseJsonList(value) {
   if (value == null || value === '') return []
@@ -185,7 +187,7 @@ function parseJsonList(value) {
 
 app.get('/api/tasks', requireAuth, async (req, res) => {
   const sql = `
-    SELECT tasks.*, completions.completed_at, users.username AS completed_by,
+        SELECT tasks.*, ${POINTS_SQL} AS points_value, completions.completed_at, users.username AS completed_by,
       users.shape AS completed_by_shape, users.color AS completed_by_color
     FROM tasks
     LEFT JOIN completions ON completions.id = (
@@ -213,6 +215,7 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
         completedByColor: completed ? row.completed_by_color : null,
         completedAt: completed ? row.completed_at : null,
         estimatedTime: row.estimated_time,
+        points: Number(row.points_value),
         instructions: parseJsonList(row.instructions),
         supplies: parseJsonList(row.supplies),
         supplyLocation: row.supply_location,
@@ -222,6 +225,35 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Failed to fetch tasks:', error.message)
     res.status(500).json({ error: 'Failed to fetch tasks' })
+  }
+})
+// Latest 100 completions: who did what, when, and how many points it gave
+app.get('/api/history', requireAuth, async (req, res) => {
+  const sql = `
+    SELECT completions.id, completions.completed_at, tasks.name AS task_name,
+      ${POINTS_SQL} AS points, users.username, users.shape, users.color
+    FROM completions
+    JOIN tasks ON tasks.id = completions.task_id
+    JOIN users ON users.id = completions.user_id
+    ORDER BY completions.completed_at DESC
+    LIMIT 100
+  `
+  try {
+    const rows = await db.all(sql)
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        taskName: row.task_name,
+        points: Number(row.points),
+        username: row.username,
+        shape: row.shape,
+        color: row.color,
+        completedAt: row.completed_at,
+      })),
+    )
+  } catch (error) {
+    console.error('Failed to fetch history:', error.message)
+    res.status(500).json({ error: 'Failed to fetch history' })
   }
 })
 

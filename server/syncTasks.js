@@ -11,18 +11,20 @@ async function syncTasks(db, { removeMissing = false } = {}) {
       JSON.stringify(task.supplies ?? []),
       task.location ?? '',
     ]
+    // Points from taskList.js; without them the task keeps its current points
+    const points = Number.isInteger(task.points) && task.points > 0 ? task.points : null
     await db.run(
-      `UPDATE tasks SET frequency = ?, instructions = ?, supplies = ?, supply_location = ?
+      `UPDATE tasks SET frequency = ?, instructions = ?, supplies = ?, supply_location = ?,
+         points = COALESCE(?, points)
        WHERE name = ?`,
-      [...fields, task.name],
+      [...fields, points, task.name],
     )
     await db.run(
-      `INSERT INTO tasks (name, frequency, instructions, supplies, supply_location)
-       SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE name = ?)`,
-      [task.name, ...fields, task.name],
+      `INSERT INTO tasks (name, frequency, instructions, supplies, supply_location, points)
+       SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE name = ?)`,
+      [task.name, ...fields, points, task.name],
     )
   }
-
   if (removeMissing) {
     const names = taskList.map((task) => task.name)
     if (names.length === 0) {

@@ -97,6 +97,14 @@ async function init() {
       await run("ALTER TABLE users ADD COLUMN color TEXT NOT NULL DEFAULT '#16a34a'")
     }
 
+    // Points per task. Old databases get the column and a starting value.
+    const taskColumns = await all('PRAGMA table_info(tasks)')
+    if (!taskColumns.some((column) => column.name === 'points')) {
+      await run('ALTER TABLE tasks ADD COLUMN points INTEGER')
+      await run(
+        'UPDATE tasks SET points = MAX(1, (COALESCE(estimated_time, 5) + 4) / 5)'
+      )
+    }
     // Adds new tasks from taskList.js and updates instructions of existing ones.
     // Never deletes tasks here; the admin page's Reload task list does that.
     await syncTasks(db, {})

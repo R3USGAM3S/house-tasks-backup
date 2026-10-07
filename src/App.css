@@ -288,3 +288,7 @@
   padding: 0.5rem;
   text-align: center;
 }
+/* Space between the Tasks/History buttons and the content below */
+.view-tabs {
+  margin-bottom: 1.5rem;
+}
